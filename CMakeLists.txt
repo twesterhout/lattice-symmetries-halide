@@ -9,13 +9,22 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS YES)
 
 # Find Halide
 find_package(Halide REQUIRED)
+find_package(PkgConfig REQUIRED) 
+
+pkg_check_modules(LatticeSymmetries REQUIRED IMPORTED_TARGET lattice_symmetries)
 
 # Generator
 add_executable(generator generator.cpp)
 target_link_libraries(generator PRIVATE Halide::Generator)
 
 add_halide_library(benes_network
-    FROM generator GENERATOR benes_network_generator FEATURES trace_realizations trace_pipeline)
+    FROM generator GENERATOR benes_network_generator)
+
+add_executable(benchmark benchmark.cpp)
+target_link_libraries(benchmark
+    PRIVATE benes_network
+    PUBLIC  PkgConfig::LatticeSymmetries
+)
 
 # add_halide_library(experiment
 #     FROM generator GENERATOR experimental_generator)
