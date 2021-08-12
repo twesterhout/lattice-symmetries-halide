@@ -1,5 +1,6 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
-#include "benes_network.h"
+#include "benes_network_general.h"
+#include "benes_network_symmetric.h"
 #include <HalideBuffer.h>
 #include <complex>
 #include <doctest.h>
@@ -64,9 +65,9 @@ TEST_CASE("4-spin chain (no symmetries)") {
 
   uint64_t x[1] = {0b0110};
   Buffer<uint64_t> x_buffer{&x[0], 1};
-  benes_network(x_buffer, uint64_t{0b1111}, masks_buffer, eigvals_re_buffer,
-                eigvals_im_buffer, shifts_buffer, repr_buffer, character_buffer,
-                norm_buffer);
+  benes_network_general(x_buffer, uint64_t{0b1111}, masks_buffer,
+                        eigvals_re_buffer, eigvals_im_buffer, shifts_buffer,
+                        repr_buffer, character_buffer, norm_buffer);
 
   for (auto i = 0; i < 1; ++i) {
     fprintf(stderr, "%lu -> %lu, %f + %fi, %f\n", x[i], repr[i],

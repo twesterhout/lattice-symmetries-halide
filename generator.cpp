@@ -1,8 +1,4 @@
 #include "Halide.h"
-#include <cmath>
-#include <complex>
-
-// #include <cstdio>
 
 using namespace Halide;
 
@@ -51,11 +47,11 @@ public:
     }
     if (_spin_inversion == 1) {
       auto temp = reduction_step_impl(i, current, y, c_re, c_im);
-      return reduction_step_impl(i, temp, y & _flip_mask, c_re, c_im);
+      return reduction_step_impl(i, temp, y ^ _flip_mask, c_re, c_im);
     }
     if (_spin_inversion == -1) {
       auto temp = reduction_step_impl(i, current, y, c_re, c_im);
-      return reduction_step_impl(i, temp, y & _flip_mask, -c_re, -c_im);
+      return reduction_step_impl(i, temp, y ^ _flip_mask, -c_re, -c_im);
     }
     throw std::runtime_error{"invalid spin_inversion"};
   }
@@ -137,7 +133,11 @@ public:
     _character(i, q) = undef<double>();
     _character(i, 0) = reduction_scalar(i)[1];
     _character(i, 1) = reduction_scalar(i)[2];
-    _norm(i) = sqrt(reduction_scalar(i)[3] / number_masks);
+    if (_spin_inversion == 0) {
+      _norm(i) = sqrt(reduction_scalar(i)[3] / number_masks);
+    } else {
+      _norm(i) = sqrt(reduction_scalar(i)[3] / (2 * number_masks));
+    }
 
     auto batch_size = _x.dim(0).extent();
     _x.dim(0).set_min(0).set_stride(1);
