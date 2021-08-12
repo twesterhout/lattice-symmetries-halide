@@ -21,7 +21,7 @@ public:
   Input<Buffer<uint64_t>> _masks{"masks", 2};
   Input<Buffer<double>> _eigvals_re{"eigvals_re", 1};
   Input<Buffer<double>> _eigvals_im{"eigvals_im", 1};
-  Input<Buffer<int>> _shifts{"shifts", 1};
+  Input<Buffer<unsigned>> _shifts{"shifts", 1};
   Output<Buffer<uint64_t>> _repr{"representative", 1};
   Output<Buffer<double>> _character{"character", 2};
   Output<Buffer<double>> _norm{"norm"};
@@ -82,7 +82,7 @@ public:
   void generate() {
     auto depth = _masks.dim(0).extent();
     auto number_masks = _masks.dim(1).extent();
-    auto const chunk_size = natural_vector_size(type_of<uint64_t>());
+    auto const chunk_size = 2 * natural_vector_size(type_of<uint64_t>());
     auto number_chunks = number_masks / chunk_size;
     auto number_rest = number_masks - number_chunks * chunk_size;
 
@@ -137,7 +137,7 @@ public:
     _character(i, q) = undef<double>();
     _character(i, 0) = reduction_scalar(i)[1];
     _character(i, 1) = reduction_scalar(i)[2];
-    _norm(i) = reduction_scalar(i)[3];
+    _norm(i) = sqrt(reduction_scalar(i)[3] / number_masks);
 
     auto batch_size = _x.dim(0).extent();
     _x.dim(0).set_min(0).set_stride(1);
@@ -165,39 +165,4 @@ public:
   }
 };
 
-#if 0
-class experimental_generator
-    : public Halide::Generator<experimental_generator> {
-public:
-  Input<Buffer<double>> _input{"input", 1};
-  Output<double> _output_1{"output_1"};
-  Output<double> _output_2{"output_2"};
-
-  void generate() {
-    Var i{"i"};
-
-    Func temp{"temp"};
-    temp(i) = sin(_input(i));
-
-    RDom j_reduction{0, _input.dim(0).extent(), "j_reduction"};
-
-    Func reduction{"reduction"};
-    reduction() = {cast<double>(0), cast<double>(INFINITY)};
-    reduction() = {reduction()[0] + temp(j_reduction),
-                   min(reduction()[1], temp(j_reduction))};
-    reduction.compute_root();
-    temp.compute_at(reduction, j_reduction);
-
-    _output_1() = reduction()[0];
-    _output_2() = reduction()[1];
-
-    // temp.compute_at(_output_1, j_reduction);
-    // _output_2.compute_with(_output_1, j_reduction);
-  }
-};
-#endif
-
 HALIDE_REGISTER_GENERATOR(benes_network_generator, benes_network_generator)
-#if 0
-HALIDE_REGISTER_GENERATOR(experimental_generator, experimental_generator)
-#endif
