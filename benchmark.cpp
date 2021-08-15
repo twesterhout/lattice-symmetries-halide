@@ -1,5 +1,4 @@
-#include "benes_network_general.h"
-#include "benes_network_symmetric.h"
+#include "kernels.hpp"
 #include <HalideBuffer.h>
 #include <HalideRuntime.h>
 #include <cassert>
@@ -33,6 +32,8 @@ struct halide_kernel {
   Halide::Runtime::Buffer<double, 1> _norm;
   uint64_t _flip_mask;
 
+  ls_internal_state_info_general_kernel_t _kernel;
+
   static auto get_flip_mask_64(unsigned const n) noexcept -> uint64_t {
     return n == 0U ? uint64_t{0} : ((~uint64_t{0}) >> (64U - n));
   }
@@ -48,7 +49,8 @@ struct halide_kernel {
         _eigvals_im(number_masks),
         _shifts(depth), _x{}, _repr{}, _character{}, _norm{},
         _flip_mask{get_flip_mask_64(static_cast<unsigned>(
-            std::max(ls_group_get_number_spins(group), 0)))} {
+            std::max(ls_group_get_number_spins(group), 0)))},
+        _kernel{get_general_kernel()} {
     fprintf(stderr, "_flip_mask = %zu\n", _flip_mask);
     _masks.transpose(0, 1);
     std::vector<std::complex<double>> temp(number_masks);
@@ -94,8 +96,8 @@ struct halide_kernel {
     _norm.raw_buffer()->host =
         reinterpret_cast<uint8_t *>(const_cast<double *>(norm));
     _norm.raw_buffer()->dim[0].extent = count;
-    benes_network_symmetric(_x, _flip_mask, _masks, _eigvals_re, _eigvals_im,
-                            _shifts, _repr, _character, _norm);
+    (*_kernel)(_x, _flip_mask, _masks, _eigvals_re, _eigvals_im, _shifts, _repr,
+               _character, _norm);
   }
 };
 
@@ -256,7 +258,7 @@ auto make_basis_5x5(bool symmetric) {
 
 int main() {
   // ls_enable_logging();
-  auto [basis, kernel] = make_basis_4x6(true, 1);
+  auto [basis, kernel] = make_basis_4x6(true, 0);
   auto [full_basis, _] = make_basis_4x6(false, 0);
   ls_build(full_basis);
   ls_states *states;
