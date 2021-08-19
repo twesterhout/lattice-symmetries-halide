@@ -7,8 +7,7 @@ auto bit_permute_step_64(Expr x, Expr m, Expr d) -> Expr {
   return (x ^ y) ^ (y << d);
 }
 
-class benes_network_generator
-    : public Halide::Generator<benes_network_generator> {
+class state_info_generator : public Halide::Generator<state_info_generator> {
 public:
   GeneratorParam<int> _spin_inversion{"spin_inversion", /*default value*/ 0};
 
@@ -165,4 +164,101 @@ public:
   }
 };
 
-HALIDE_REGISTER_GENERATOR(benes_network_generator, benes_network_generator)
+class is_representative_generator
+    : public Halide::Generator<is_representative_generator> {
+public:
+  GeneratorParam<int> _spin_inversion{"spin_inversion", /*default value*/ 0};
+
+  Input<Buffer<uint64_t>> _x{"x", 1};
+  Input<uint64_t> _flip_mask{"flip_mask"};
+  Input<Buffer<uint64_t>> _masks{"masks", 2};
+  Input<Buffer<unsigned>> _shifts{"shifts", 1};
+  Input<Buffer<double>> _eigvals_re{"eigvals_re", 1};
+  Output<Buffer<bool>> _is_representative{"is_representative", 1};
+  Output<Buffer<double>> _norm{"norm", 1};
+
+  void generate() {
+    auto count = _x.dim(0).extent();
+    auto depth = _masks.dim(0).extent();
+    auto number_masks = _masks.dim(1).extent();
+    auto const chunk_size = natural_vector_size(type_of<uint64_t>());
+    auto number_chunks = number_masks / chunk_size;
+    auto number_rest = number_masks - number_chunks * chunk_size;
+
+    Var i{"i"};
+    Var j_outer{"j_outer"};
+    Var j_inner{"j_inner"};
+
+    // Transform input
+    RDom k{0, depth, "k"};
+    Func y{"y"};
+    y(i, j_outer, j_inner) = _x(i);
+    y(i, j_outer, j_inner) = bit_permute_step_64(
+        y(i, j_outer, j_inner), _masks(k, j_outer * chunk_size + j_inner),
+        _shifts(k));
+    Func temp{"temp"};
+    if (_spin_inversion == 0) {
+      temp(i, j_outer, j_inner) =
+          Tuple{cast<double>(y(i, j_outer, j_inner) == _x(i)) *
+                    _eigvals_re(j_outer * chunk_size + j_inner),
+                y(i, j_outer, j_inner) >= _x(i)};
+    } else if (_spin_inversion == 1) {
+      auto y_flipped = y(i, j_outer, j_inner) ^ _flip_mask;
+      temp(i, j_outer, j_inner) =
+          Tuple{(cast<double>(y(i, j_outer, j_inner) == _x(i)) +
+                 cast<double>(y_flipped == _x(i))) *
+                    _eigvals_re(j_outer * chunk_size + j_inner),
+                y(i, j_outer, j_inner) >= _x(i) && y_flipped >= _x(i)};
+    } else if (_spin_inversion == -1) {
+      auto y_flipped = y(i, j_outer, j_inner) ^ _flip_mask;
+      temp(i, j_outer, j_inner) =
+          Tuple{(cast<double>(y(i, j_outer, j_inner) == _x(i)) -
+                 cast<double>(y_flipped == _x(i))) *
+                    _eigvals_re(j_outer * chunk_size + j_inner),
+                y(i, j_outer, j_inner) >= _x(i) && y_flipped >= _x(i)};
+    } else {
+      throw std::runtime_error{"invalid spin_inversion"};
+    }
+
+    // Horizontal reduction
+    RDom m_lane{0, chunk_size, "m_lane"};
+    Func lane_reduction{"lane_reduction"};
+    lane_reduction(i, j_outer) = Tuple{cast<double>(0), cast<bool>(true)};
+    lane_reduction(i, j_outer) =
+        Tuple{lane_reduction(i, j_outer)[0] + temp(i, j_outer, m_lane)[0],
+              lane_reduction(i, j_outer)[1] && temp(i, j_outer, m_lane)[1]};
+
+    // Vertical reduction
+    RDom m_batch{0, number_chunks, "m_batch"};
+    Func batch_reduction{"batch_reduction"};
+    batch_reduction(i) = Tuple{cast<double>(0), cast<bool>(true)};
+    m_batch.where(batch_reduction(i)[1]);
+    batch_reduction(i) =
+        Tuple{batch_reduction(i)[0] + lane_reduction(i, m_batch)[0],
+              batch_reduction(i)[1] && lane_reduction(i, m_batch)[1]};
+
+    // Save results
+    _is_representative(i) = batch_reduction(i)[1];
+    _norm(i) = batch_reduction(i)[0];
+
+    // Shapes & strides
+    _x.dim(0).set_min(0).set_stride(1);
+    _masks.dim(0).set_min(0).set_stride(number_masks);
+    _masks.dim(1).set_min(0).set_stride(1);
+    _shifts.dim(0).set_min(0).set_stride(1).set_extent(depth);
+    _eigvals_re.dim(0).set_min(0).set_stride(1).set_extent(number_masks);
+    _is_representative.dim(0).set_min(0).set_stride(1).set_extent(count);
+    _norm.dim(0).set_min(0).set_stride(1).set_extent(count);
+
+    // Schedule
+    temp.vectorize(j_inner);
+    temp.compute_at(lane_reduction, j_outer);
+    // lane_reduction.compute_at(batch_reduction, m_batch);
+    batch_reduction.compute_at(_is_representative, i);
+    _norm.compute_with(_is_representative, i);
+  }
+};
+
+HALIDE_REGISTER_GENERATOR(state_info_generator, state_info_generator)
+HALIDE_REGISTER_GENERATOR(is_representative_generator,
+                          is_representative_generator)

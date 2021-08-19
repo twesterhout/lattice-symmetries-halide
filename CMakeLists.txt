@@ -106,73 +106,69 @@ function(generate_kernels_for_arch)
   set(${generate_kernels_for_arch_OUTPUT_LIST} ${_output_list} PARENT_SCOPE)
 endfunction()
 
-if("${CMAKE_SYSTEM_PROCESSOR}" MATCHES "(x86|AMD64)")
-  set(x86_64_suffixes _sse41 _avx _avx2)
-  set(x86_64_features -sse41 -avx-sse41 -avx-avx2-fma-sse41)
-
-  generate_kernels_for_arch(
-      FROM generator
-      GENERATOR benes_network_generator
-      PARAMS spin_inversion=0
-      BASE_NAME ls_internal_state_info_general_kernel_64
-      BASE_ARCH x86-64-${os_for_Halide}
-      SUFFIXES ${x86_64_suffixes}
-      FEATURES ${x86_64_features}
-      OUTPUT_LIST general_kernels
-  )
-  generate_kernels_for_arch(
-      FROM generator
-      GENERATOR benes_network_generator
-      PARAMS spin_inversion=1
-      BASE_NAME ls_internal_state_info_symmetric_kernel_64
-      BASE_ARCH x86-64-${os_for_Halide}
-      SUFFIXES ${x86_64_suffixes}
-      FEATURES ${x86_64_features}
-      OUTPUT_LIST symmetric_kernels
-  )
-  generate_kernels_for_arch(
-      FROM generator
-      GENERATOR benes_network_generator
-      PARAMS spin_inversion=-1
-      BASE_NAME ls_internal_state_info_antisymmetric_kernel_64
-      BASE_ARCH x86-64-${os_for_Halide}
-      SUFFIXES ${x86_64_suffixes}
-      FEATURES ${x86_64_features}
-      OUTPUT_LIST antisymmetric_kernels
-  )
-
-  set(Kernels
-      ${general_kernels}
-      ${symmetric_kernels}
-      ${antisymmetric_kernels}
-  )
+if(FALSE AND "${CMAKE_SYSTEM_PROCESSOR}" MATCHES "(x86|AMD64)")
+  set(base_arch x86-64-${os_for_Halide})
+  set(arch_suffixes _sse41 _avx _avx2)
+  set(arch_features -sse41 -avx-sse41 -avx-avx2-fma-sse41)
 else()
-  set(base_name ls_internal_state_info_general_kernel_64)
   set(base_arch host)
-
-  add_halide_library(${base_name}
-      FROM generator GENERATOR benes_network_generator
-      PARAMS spin_inversion=0
-      TARGETS ${base_arch})
-
-  set(Kernels
-      ${base_name}
-  )
+  set(arch_suffixes)
+  set(arch_features)
 endif()
 
-add_library(lattice_symmetries_kernels
-    kernels.hpp kernels.cpp
-)
-target_link_libraries(lattice_symmetries_kernels
-    PRIVATE ${Kernels} Halide::Runtime
-    PUBLIC  PkgConfig::LatticeSymmetries
-)
+if(TRUE)
+  set(spin_inversion_values 0 1 -1)
+  set(kernel_names general symmetric antisymmetric)
+  list(LENGTH spin_inversion_values _length)
+  math(EXPR _length "${_length} - 1")
+ 
+  set(Kernels)
+  foreach(_i RANGE ${_length})
+    list(GET spin_inversion_values ${_i} _param)
+    list(GET kernel_names ${_i} _name)
 
-add_executable(benchmark benchmark.cpp)
-target_link_libraries(benchmark
-    PUBLIC  lattice_symmetries_kernels
-)
-target_include_directories(benchmark PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
+    generate_kernels_for_arch(
+      FROM generator
+      GENERATOR state_info_generator
+      PARAMS spin_inversion=${_param}
+      BASE_NAME ls_internal_state_info_${_name}_kernel_64
+      BASE_ARCH ${base_arch}
+      SUFFIXES ${arch_suffixes}
+      FEATURES ${arch_features}
+      OUTPUT_LIST _local_kernels
+    )
+    list(APPEND Kernels ${_local_kernels})
+
+    generate_kernels_for_arch(
+      FROM generator
+      GENERATOR is_representative_generator
+      PARAMS spin_inversion=${_param}
+      BASE_NAME ls_internal_is_representative_${_name}_kernel_64
+      BASE_ARCH ${base_arch}
+      SUFFIXES ${arch_suffixes}
+      FEATURES ${arch_features}
+      OUTPUT_LIST _local_kernels
+    )
+    list(APPEND Kernels ${_local_kernels})
+  endforeach()
+  
+  add_library(lattice_symmetries_kernels kernels.hpp kernels.cpp)
+  target_link_libraries(lattice_symmetries_kernels
+      PRIVATE ${Kernels} Halide::Runtime
+      PUBLIC  PkgConfig::LatticeSymmetries
+  )
+  
+  add_executable(benchmark benchmark.cpp)
+  target_link_libraries(benchmark
+      PUBLIC  lattice_symmetries_kernels
+  )
+  target_include_directories(benchmark PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
+else()
+    add_executable(simple simple.cpp)
+    target_link_libraries(simple PRIVATE Halide::Generator)
+
+    add_halide_library(simple_kernel FROM simple GENERATOR my_generator)
+endif()
 
 if(BUILD_TESTING)
   enable_testing()
