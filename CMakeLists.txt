@@ -9,6 +9,8 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS YES)
 
 option(USE_SYSTEM_HALIDE OFF)
 
+include(FetchContent)
+
 # Detect operating system for Halide targets
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     set(os_for_Halide "linux")
@@ -34,7 +36,6 @@ endif()
 if(USE_SYSTEM_HALIDE)
   find_package(Halide REQUIRED)
 else()
-  include(FetchContent)
   if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
       set(_archive_suffix "zip")
   else()
@@ -55,6 +56,21 @@ else()
   find_package(Halide REQUIRED
       PATHS ${halidebinaryrelease_SOURCE_DIR}/lib/cmake)
 endif()
+
+# Find SIMDe
+FetchContent_Declare(
+  SIMDeRelease
+  GIT_REPOSITORY https://github.com/simd-everywhere/simde-no-tests.git
+  GIT_TAG        8cd136a43bae7ab9b82316179b9cef8887726778 # v0.7.0
+)
+FetchContent_GetProperties(SIMEeRelease)
+if(NOT simderelease_POPULATED)
+  message(STATUS "[lattice-symmetries] Downloading SIMDe...")
+  FetchContent_Populate(SIMDeRelease)
+endif()
+FetchContent_GetProperties(SIMEeRelease)
+add_library(SIMDe INTERFACE)
+target_include_directories(SIMDe INTERFACE ${simderelease_SOURCE_DIR})
 
 find_package(PkgConfig REQUIRED) 
 
@@ -163,6 +179,9 @@ if(TRUE)
       PUBLIC  lattice_symmetries_kernels
   )
   target_include_directories(benchmark PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
+
+  add_library(simde_kernels simde_kernels.cpp)
+  target_link_libraries(simde_kernels PRIVATE SIMDe)
 else()
     add_executable(simple simple.cpp)
     target_link_libraries(simple PRIVATE Halide::Generator)
