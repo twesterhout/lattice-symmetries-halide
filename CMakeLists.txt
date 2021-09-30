@@ -51,9 +51,12 @@ else()
     FetchContent_Populate(HalideBinaryRelease)
   endif()
   FetchContent_GetProperties(HalideBinaryRelease)
+  find_package(ZLIB REQUIRED)
   find_package(HalideHelpers REQUIRED
       PATHS ${halidebinaryrelease_SOURCE_DIR}/lib/cmake)
-  find_package(Halide REQUIRED
+  find_package(Halide REQUIRED COMPONENTS static
+  # )
+  # find_package(Halide REQUIRED
       PATHS ${halidebinaryrelease_SOURCE_DIR}/lib/cmake)
 endif()
 
@@ -88,37 +91,48 @@ function(generate_kernels_for_arch)
       "${_options}" "${_oneValueArgs}" "${_multiValueArgs}" ${ARGN})
   set(_start 0)
   list(LENGTH generate_kernels_for_arch_SUFFIXES _stop)
+  math(EXPR _stop "${_stop} - 1")
 
   # This is an ugly hack to handle empty SUFFIXES and FEATURES lists. We want to
   # append empty strings to them but CMake does not allow that, so instead we
   # create two element lists and reset the loop counter
-  if (_stop EQUAL 0)
-    set(generate_kernels_for_arch_SUFFIXES "dummy")
-    set(generate_kernels_for_arch_FEATURES "dummy")
-    list(APPEND generate_kernels_for_arch_SUFFIXES "")
-    list(APPEND generate_kernels_for_arch_FEATURES "")
-    set(_start 1)
-    set(_stop 1)
-  else()
-    list(APPEND generate_kernels_for_arch_SUFFIXES "")
-    list(APPEND generate_kernels_for_arch_FEATURES "")
-  endif()
+  # if (_stop EQUAL 0)
+  #   set(generate_kernels_for_arch_SUFFIXES "dummy")
+  #   set(generate_kernels_for_arch_FEATURES "dummy")
+  #   list(APPEND generate_kernels_for_arch_SUFFIXES "")
+  #   list(APPEND generate_kernels_for_arch_FEATURES "")
+  #   set(_start 1)
+  #   set(_stop 1)
+  # else()
+  #   list(APPEND generate_kernels_for_arch_SUFFIXES "")
+  #   list(APPEND generate_kernels_for_arch_FEATURES "")
+  # endif()
 
-  # set(_output_list "")
-  foreach(_i RANGE ${_start} ${_stop})
-    list(GET generate_kernels_for_arch_SUFFIXES ${_i} _suffix)
-    list(GET generate_kernels_for_arch_FEATURES ${_i} _feature)
-    set(_library "${generate_kernels_for_arch_BASE_NAME}${_suffix}")
-    # message(STATUS "[lattice-symmetries] Will generate ${_suffix} kernel for ${_feature}")
-    add_halide_library(${_library}
-        FROM ${generate_kernels_for_arch_FROM}
-        GENERATOR ${generate_kernels_for_arch_GENERATOR}
-        PARAMS ${generate_kernels_for_arch_PARAMS}
-        TARGETS ${generate_kernels_for_arch_BASE_ARCH}${_feature}
-    )
-    # USE_RUNTIME ${generate_kernels_for_arch_USE_RUNTIME}
-    list(APPEND _output_list ${_library})
-  endforeach()
+  # Base library
+  set(_base_library "${generate_kernels_for_arch_BASE_NAME}")
+  add_halide_library(${_base_library}
+      FROM ${generate_kernels_for_arch_FROM}
+      GENERATOR ${generate_kernels_for_arch_GENERATOR}
+      PARAMS ${generate_kernels_for_arch_PARAMS}
+      TARGETS ${generate_kernels_for_arch_BASE_ARCH}
+  )
+  list(APPEND _output_list ${_base_library})
+
+  if (${_stop} GREATER_EQUAL 0)
+    foreach(_i RANGE ${_start} ${_stop})
+      list(GET generate_kernels_for_arch_SUFFIXES ${_i} _suffix)
+      list(GET generate_kernels_for_arch_FEATURES ${_i} _feature)
+      set(_library "${generate_kernels_for_arch_BASE_NAME}${_suffix}")
+      add_halide_library(${_library}
+          FROM ${generate_kernels_for_arch_FROM}
+          GENERATOR ${generate_kernels_for_arch_GENERATOR}
+          PARAMS ${generate_kernels_for_arch_PARAMS}
+          TARGETS ${generate_kernels_for_arch_BASE_ARCH}${_feature}
+          USE_RUNTIME ${_base_library}
+      )
+      list(APPEND _output_list ${_library})
+    endforeach()
+  endif()
   set(${generate_kernels_for_arch_OUTPUT_LIST} ${_output_list} PARENT_SCOPE)
 endfunction()
 
@@ -180,8 +194,8 @@ if(TRUE)
   )
   target_include_directories(benchmark PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
 
-  add_library(simde_kernels simde_kernels.cpp)
-  target_link_libraries(simde_kernels PRIVATE SIMDe)
+  # add_library(simde_kernels simde_kernels.cpp)
+  # target_link_libraries(simde_kernels PRIVATE SIMDe)
 else()
     add_executable(simple simple.cpp)
     target_link_libraries(simple PRIVATE Halide::Generator)

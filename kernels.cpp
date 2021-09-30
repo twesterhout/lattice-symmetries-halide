@@ -1,9 +1,11 @@
 #include "kernels.hpp"
 #include <HalideBuffer.h>
 #include <HalideRuntime.h>
+
+#define IS_X86_64 false
 //
 // Architecture-specific kernels
-#ifdef __x86_64__
+#if IS_X86_64
 #include "ls_internal_state_info_general_kernel_64_avx.h"
 #include "ls_internal_state_info_general_kernel_64_avx2.h"
 #include "ls_internal_state_info_general_kernel_64_sse41.h"
@@ -42,7 +44,7 @@ struct halide_kernels_list_t {
 namespace {
 halide_kernels_list_t init_halide_kernels() {
   __builtin_cpu_init();
-#ifdef __x86_64__
+#if IS_X86_64
   if (__builtin_cpu_supports("avx2") > 0) {
     return {&ls_internal_state_info_general_kernel_64_avx2,
             &ls_internal_state_info_symmetric_kernel_64_avx2,

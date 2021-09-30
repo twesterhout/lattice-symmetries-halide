@@ -18,7 +18,7 @@ auto make_non_symmetric_basis() {
   return basis;
 }
 
-auto make_basis_4x6(bool const symmetric, int const spin_inversion) {
+template <bool Symmetric> auto make_basis_4x6(int const spin_inversion) {
   ls_error_code status;
   // clang-format off
   unsigned const sites[] =
@@ -66,7 +66,7 @@ auto make_basis_4x6(bool const symmetric, int const spin_inversion) {
   ls_symmetry const *generators[] = {T_x_symmetry, T_y_symmetry, P_x_symmetry,
                                      P_y_symmetry};
   ls_group *group = nullptr;
-  if (symmetric) {
+  if (Symmetric) {
     status = ls_create_group(&group, std::size(generators), generators);
   } else {
     status = ls_create_group(&group, 0, nullptr);
@@ -79,13 +79,19 @@ auto make_basis_4x6(bool const symmetric, int const spin_inversion) {
 
   ls_spin_basis *basis = nullptr;
   status = ls_create_spin_basis(&basis, group, 24, 12,
-                                symmetric ? spin_inversion : 0);
+                                Symmetric ? spin_inversion : 0);
   assert(status == LS_SUCCESS);
 
-  auto kernel =
-      lattice_symmetries::make_state_info_kernel(group, spin_inversion);
-  ls_destroy_group(group);
-  return std::make_tuple(basis, std::move(kernel));
+  if constexpr (Symmetric) {
+    auto kernel =
+        lattice_symmetries::make_state_info_kernel(group, spin_inversion);
+    ls_destroy_group(group);
+    return std::make_tuple(basis, std::move(kernel));
+  } else {
+    return basis;
+  }
+  // auto kernel =
+  //     lattice_symmetries::make_state_info_kernel(group, spin_inversion);
 }
 
 auto make_basis_5x5(bool symmetric) {
@@ -175,9 +181,9 @@ auto make_basis_5x5(bool symmetric) {
 }
 
 int main() {
-  // ls_enable_logging();
-  auto [basis, kernel] = make_basis_4x6(true, 0);
-  auto [full_basis, _] = make_basis_4x6(false, 0);
+  ls_enable_logging();
+  auto [basis, kernel] = make_basis_4x6<true>(1);
+  auto full_basis = make_basis_4x6<false>(0);
   ls_build(full_basis);
   ls_states *states;
   ls_get_states(&states, full_basis);
